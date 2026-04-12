@@ -1,0 +1,136 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tensorflow as tf
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+df = pd.read_csv('diabetes.csv')
+
+X = df.drop('Outcome', axis=1)
+y = df['Outcome']
+
+X_train, X_test, y_train, y_test = train_test_split(
+   X, y, test_size=0.2, random_state=42
+)
+
+scaler = StandardScaler()
+
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print("\n--- Training Baseline ANN ---")
+
+baseline = Sequential([
+   Dense(16, activation='relu', input_shape=(X_train_scaled.shape[1],)),
+   Dense(1, activation='sigmoid')
+])
+
+baseline.compile(
+   optimizer='adam',
+   loss='binary_crossentropy',
+   metrics=['accuracy']
+)
+
+baseline.fit(X_train_scaled, y_train, epochs=100, verbose=0)
+
+base_pred = (baseline.predict(X_test_scaled) > 0.5)
+
+print("Baseline Accuracy:", accuracy_score(y_test, base_pred))
+
+def build_and_evaluate(layers, neurons, epochs=150):
+
+   model = Sequential()
+
+   model.add(Dense(neurons, activation='relu',
+                   input_shape=(X_train_scaled.shape[1],)))
+
+   for _ in range(layers - 1):
+       model.add(Dense(neurons, activation='relu'))
+
+   model.add(Dense(1, activation='sigmoid'))
+
+   model.compile(
+       optimizer='adam',
+       loss='binary_crossentropy',
+       metrics=['accuracy']
+   )
+
+   history = model.fit(
+       X_train_scaled,
+       y_train,
+       validation_split=0.2,
+       epochs=epochs,
+       verbose=0
+   )
+
+   y_pred = (model.predict(X_test_scaled) > 0.5)
+
+   acc = accuracy_score(y_test, y_pred)
+
+   return acc, history
+
+trials = [
+   {"Name": "Trial 1 (Deep)", "Layers": 3, "Neurons": 32},
+   {"Name": "Trial 2 (Dense)", "Layers": 2, "Neurons": 128},
+   {"Name": "Trial 3 (Balanced)", "Layers": 2, "Neurons": 64}
+]
+
+results = []
+best_history = None
+
+print("\n--- Running Tuning Trials ---")
+
+for t in trials:
+
+   score, hist = build_and_evaluate(
+       t["Layers"],
+       t["Neurons"]
+   )
+
+   results.append({
+       "Trial": t["Name"],
+       "Accuracy": score
+   })
+
+   if t["Name"] == "Trial 3 (Balanced)":
+       best_history = hist
+
+   print(f"{t['Name']} completed.")
+
+plt.figure(figsize=(8,5))
+
+plt.plot(best_history.history['loss'], label='Train Loss')
+plt.plot(best_history.history['val_loss'], label='Val Loss')
+
+plt.title("Model Loss")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+
+plt.legend()
+plt.show()
+
+y_pred_final = (baseline.predict(X_test_scaled) > 0.5)
+
+cm = confusion_matrix(y_test, y_pred_final)
+
+plt.figure(figsize=(6,4))
+sns.heatmap(cm, annot=True, fmt='d')
+
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+
+plt.title("Confusion Matrix")
+plt.show()
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred_final))
+
+print("\nANN TUNING SUMMARY:")
+print(pd.DataFrame(results).to_string(index=False))
