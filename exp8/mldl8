@@ -1,0 +1,70 @@
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras import datasets, layers, models
+
+
+
+(X_train, y_train), (X_test, y_test) = datasets.cifar10.load_data()
+
+
+
+X_train, X_test = X_train / 255.0, X_test / 255.0
+
+
+
+print(X_train.shape)
+print(X_test.shape)
+
+
+
+model = models.Sequential([
+    layers.Conv2D(32, (3,3), activation='relu', input_shape=(32,32,3)),
+    layers.MaxPooling2D((2,2)),
+    
+    layers.Conv2D(64, (3,3), activation='relu'),
+    layers.MaxPooling2D((2,2)),
+    
+    layers.Flatten(),
+    layers.Dense(64, activation='relu'),
+    layers.Dense(10, activation='softmax')
+])
+
+
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+
+
+model.fit(X_train, y_train, epochs=5)
+
+
+
+test_loss, test_acc = model.evaluate(X_test, y_test)
+print("Test Accuracy:", test_acc)
+
+
+
+class_names = ['Airplane','Car','Bird','Cat','Deer',
+               'Dog','Frog','Horse','Ship','Truck']
+
+predictions = model.predict(X_test[:5])
+
+for i in range(5):
+    plt.imshow(X_test[i])
+    plt.title(f"Predicted: {class_names[predictions[i].argmax()]}, Actual: {class_names[y_test[i][0]]}")
+    plt.axis('off')
+    plt.show()
+
+
+
+plt.figure(figsize=(8,8))
+for i in range(16):
+    plt.subplot(4,4,i+1)
+    plt.imshow(X_train[i])
+    plt.title(y_train[i][0])
+    plt.axis('off')
+plt.show()
