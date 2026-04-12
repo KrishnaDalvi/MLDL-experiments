@@ -1,0 +1,322 @@
+
+
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, precision_score, recall_score, f1_score
+import numpy as np
+from src.predict import predict_aqi, classify_aqi, load_model_and_scaler
+from src.data_preprocessing import load_and_preprocess_data
+
+
+
+
+def load_data():
+    """Load the air quality dataset."""
+    try:
+        df = pd.read_csv('data/air_quality.csv')
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        return None
+
+
+
+
+def visualize_data(df):
+    """Create data visualizations."""
+    st.header("Data Visualization")
+
+
+    # Basic statistics
+    st.subheader("Dataset Overview")
+    st.write(f"Number of samples: {len(df)}")
+    st.write(f"Number of features: {len(df.columns) - 1}")  # Excluding AQI
+
+
+    col1, col2 = st.columns(2)
+
+
+    with col1:
+        st.subheader("Summary Statistics")
+        st.dataframe(df.describe())
+
+
+    with col2:
+        st.subheader("Data Types")
+        for col, dtype in df.dtypes.items():
+            st.write(f"**{col}**: {dtype}")
+
+
+    # Distribution plots
+    st.subheader("Feature Distributions")
+    features = ['PM2.5', 'PM10', 'NO2', 'SO2', 'CO', 'O3', 'AQI']
+
+
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes = axes.ravel()
+
+
+    for i, feature in enumerate(features):
+        if i < len(axes):
+            sns.histplot(df[feature], ax=axes[i], kde=True)
+            axes[i].set_title(f'Distribution of {feature}')
+
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+    # Correlation heatmap
+    st.subheader("Correlation Heatmap")
+    fig, ax = plt.subplots(figsize=(10, 8))
+    corr_matrix = df.corr()
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', ax=ax)
+    st.pyplot(fig)
+
+
+    # Scatter plots
+    st.subheader("Pollutants vs AQI")
+    pollutants = ['PM2.5', 'PM10', 'NO2', 'SO2', 'CO', 'O3']
+
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    axes = axes.ravel()
+
+
+    for i, pollutant in enumerate(pollutants):
+        sns.scatterplot(data=df, x=pollutant, y='AQI', ax=axes[i])
+        axes[i].set_title(f'{pollutant} vs AQI')
+
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+
+
+def evaluate_model():
+    """Evaluate the model and show metrics."""
+    st.header("Model Evaluation")
+
+
+    try:
+        # Load data
+        df = load_data()
+        if df is None:
+            return
+
+
+        # Load model and scaler
+        model, scaler = load_model_and_scaler()
+
+
+        # Prepare data
+        features = ['PM2.5', 'PM10', 'NO2', 'SO2', 'CO', 'O3']
+        X = df[features]
+        y_true_aqi = df['AQI']
+
+
+        # Scale features
+        X_scaled = scaler.transform(X)
+
+
+        # Make predictions
+        y_pred_aqi = model.predict(X_scaled)
+
+
+        # Classify predictions and true values
+        y_true_class = [classify_aqi(aqi) for aqi in y_true_aqi]
+        y_pred_class = [classify_aqi(aqi) for aqi in y_pred_aqi]
+
+
+        # Get unique classes
+        classes = sorted(list(set(y_true_class + y_pred_class)))
+
+
+        # Confusion Matrix
+        st.subheader("Confusion Matrix")
+        cm = confusion_matrix(y_true_class, y_pred_class, labels=classes)
+
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=classes, yticklabels=classes, ax=ax)
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('True')
+        ax.set_title('Confusion Matrix')
+        st.pyplot(fig)
+
+
+        # Classification Report
+        st.subheader("Classification Report")
+        report = classification_report(y_true_class, y_pred_class, target_names=classes, output_dict=True)
+
+
+        # Convert to DataFrame for better display
+        report_df = pd.DataFrame(report).transpose()
+        st.dataframe(report_df.style.highlight_max(axis=0))
+
+
+        # Key Metrics Visualization
+        st.subheader("Model Performance Metrics")
+
+
+        # Calculate metrics
+        accuracy = accuracy_score(y_true_class, y_pred_class)
+        precision = precision_score(y_true_class, y_pred_class, average='weighted', zero_division=0)
+        recall = recall_score(y_true_class, y_pred_class, average='weighted', zero_division=0)
+        f1 = f1_score(y_true_class, y_pred_class, average='weighted', zero_division=0)
+
+
+        # Create metrics plot
+        metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+        values = [accuracy, precision, recall, f1]
+
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = ax.bar(metrics, values, color=['blue', 'green', 'orange', 'red'])
+        ax.set_ylim(0, 1)
+        ax.set_title('Model Performance Metrics')
+        ax.set_ylabel('Score')
+
+
+        # Add value labels on bars
+        for bar, value in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                    f'{value:.3f}', ha='center', va='bottom')
+
+
+        st.pyplot(fig)
+
+
+        # Regression Metrics
+        st.subheader("Regression Metrics")
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+        import numpy as np
+
+
+        mae = mean_absolute_error(y_true_aqi, y_pred_aqi)
+        rmse = np.sqrt(mean_squared_error(y_true_aqi, y_pred_aqi))
+        r2 = r2_score(y_true_aqi, y_pred_aqi)
+
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("MAE", f"{mae:.2f}")
+        with col2:
+            st.metric("RMSE", f"{rmse:.2f}")
+        with col3:
+            st.metric("R²", f"{r2:.3f}")
+
+
+        # Predictions vs Actual
+        st.subheader("Predictions vs Actual AQI")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.scatter(y_true_aqi, y_pred_aqi, alpha=0.6)
+        ax.plot([y_true_aqi.min(), y_true_aqi.max()], [y_true_aqi.min(), y_true_aqi.max()],
+                'r--', lw=2, label='Perfect Prediction')
+        ax.set_xlabel('Actual AQI')
+        ax.set_ylabel('Predicted AQI')
+        ax.set_title('Actual vs Predicted AQI')
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
+
+
+    except Exception as e:
+        st.error(f"Error in model evaluation: {str(e)}")
+        st.warning("Please ensure the model is trained and data is available.")
+
+
+
+
+def main():
+    """
+    Main function to run the Streamlit application.
+    """
+    st.title("Air Quality Index (AQI) Prediction")
+    st.markdown("""
+    This application predicts the Air Quality Index (AQI) based on pollutant concentrations.
+    Enter the values for the following pollutants and click 'Predict AQI' to get the result.
+    """)
+
+
+    # Create tabs
+    tab1, tab2, tab3 = st.tabs(["Prediction", "Data Visualization", "Model Evaluation"])
+
+
+    with tab1:
+        # Input fields for pollutants
+        st.header("Pollutant Concentrations")
+        col1, col2 = st.columns(2)
+
+
+        with col1:
+            pm25 = st.number_input("PM2.5 (µg/m³)", min_value=0.0, value=10.0, step=0.1)
+            pm10 = st.number_input("PM10 (µg/m³)", min_value=0.0, value=20.0, step=0.1)
+            no2 = st.number_input("NO2 (µg/m³)", min_value=0.0, value=5.0, step=0.1)
+
+
+        with col2:
+            so2 = st.number_input("SO2 (µg/m³)", min_value=0.0, value=2.0, step=0.1)
+            co = st.number_input("CO (mg/m³)", min_value=0.0, value=0.1, step=0.01)
+            o3 = st.number_input("O3 (µg/m³)", min_value=0.0, value=15.0, step=0.1)
+
+
+        # Predict button
+        if st.button("Predict AQI"):
+            try:
+                # Prepare input data
+                pollutants = [pm25, pm10, no2, so2, co, o3]
+
+
+                # Make prediction
+                predicted_aqi = predict_aqi(pollutants)
+                category = classify_aqi(predicted_aqi)
+
+
+                # Display results
+                st.success(f"Predicted AQI: {predicted_aqi:.2f}")
+                st.info(f"AQI Category: {category}")
+
+
+                # Additional information
+                st.markdown("### AQI Categories (Indian Standards):")
+                categories = {
+                    "Good": "0–50",
+                    "Satisfactory": "51–100",
+                    "Moderate": "101–200",
+                    "Poor": "201–300",
+                    "Very Poor": "301–400",
+                    "Severe": "401–500"
+                }
+
+
+                for cat, range_val in categories.items():
+                    if category == cat:
+                        st.markdown(f"**{cat} ({range_val})**")
+                    else:
+                        st.markdown(f"{cat} ({range_val})")
+
+
+            except Exception as e:
+                st.error(f"Error in prediction: {str(e)}")
+                st.warning("Please ensure the model is trained and available in the 'models' directory.")
+
+
+    with tab2:
+        df = load_data()
+        if df is not None:
+            visualize_data(df)
+
+
+    with tab3:
+        evaluate_model()
+
+
+
+
+if __name__ == "__main__":
+    main()
